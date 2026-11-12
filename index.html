@@ -1,0 +1,2242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>New World — Interactive Campaign Atlas</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for synthesized Hextech & Parchment Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Google Fonts: Cinzel for Hextech/Fantasy headers & Inter for clean readability -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for crisp fantasy & UI icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        obsidian: '#091428',
+                        abyss: '#060c18',
+                        hexdark: '#0a0e17',
+                        hexcard: '#111927',
+                        gold: {
+                            light: '#f0e6d2',
+                            DEFAULT: '#c8aa6e',
+                            dim: '#785a28',
+                            dark: '#463714'
+                        },
+                        arcane: '#0ac8b9'
+                    },
+                    fontFamily: {
+                        display: ['Cinzel', 'Georgia', 'serif'],
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar & Runeterra Hextech Styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #060c18;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #785a28;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c8aa6e;
+        }
+
+        body {
+            background-color: #060c18;
+            color: #f0e6d2;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        .allow-select {
+            user-select: text;
+        }
+
+        /* Hextech Gold Border & Glow Effects */
+        .hex-border {
+            border: 1px solid #785a28;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.8);
+        }
+        .hex-border-bright {
+            border: 1px solid #c8aa6e;
+            box-shadow: 0 0 15px rgba(200, 170, 110, 0.2), inset 0 0 12px rgba(200, 170, 110, 0.08);
+        }
+
+        /* Map Pin Pulse Animation */
+        @keyframes pulseRing {
+            0% {
+                transform: scale(0.85);
+                opacity: 0.85;
+            }
+            100% {
+                transform: scale(2.1);
+                opacity: 0;
+            }
+        }
+        .pin-pulse {
+            animation: pulseRing 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        /* Map Viewport & Smooth Transform */
+        #map-viewport {
+            cursor: grab;
+            background: radial-gradient(circle at center, #0e1d36 0%, #050a14 100%);
+        }
+        #map-viewport:active {
+            cursor: grabbing;
+        }
+        #map-viewport.edit-placing {
+            cursor: crosshair !important;
+        }
+
+        /* Cinematic Camera Glide Transition (enabled only during programmatic focus/reset) */
+        #map-world.camera-gliding {
+            transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* Active Pin Radar Beacon */
+        @keyframes activeBeacon {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.95;
+            }
+            70% {
+                transform: scale(2.6);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(2.6);
+                opacity: 0;
+            }
+        }
+        .active-pin-beacon {
+            animation: activeBeacon 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+
+        /* Subtle vignette over map edges */
+        .map-vignette {
+            pointer-events: none;
+            box-shadow: inset 0 0 90px rgba(4, 8, 16, 0.92);
+        }
+
+        /* Tab active indicator */
+        .nav-tab.active {
+            color: #f0e6d2;
+            border-bottom: 2px solid #c8aa6e;
+            background: linear-gradient(to top, rgba(200, 170, 110, 0.15), transparent);
+        }
+
+        /* Subtle ripple effect when clicking empty map */
+        @keyframes mapClickRipple {
+            0% {
+                transform: translate(-50%, -50%) scale(0.2);
+                opacity: 0.9;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(2.4);
+                opacity: 0;
+            }
+        }
+        .map-ripple {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border-radius: 9999px;
+            border: 2px solid #0ac8b9;
+            pointer-events: none;
+            animation: mapClickRipple 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            z-index: 25;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- =====================================================================
+         TOP NAVIGATION BAR (Runeterra Universe Style)
+         ===================================================================== -->
+    <header class="sticky top-0 z-40 bg-hexdark/95 backdrop-blur-md border-b border-gold-dim/70 px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
+        <!-- Brand / Campaign Title -->
+        <div class="flex items-center gap-3 min-w-0">
+            <div class="w-9 h-9 rounded-full border border-gold flex items-center justify-center bg-obsidian shrink-0 shadow-[0_0_12px_rgba(200,170,110,0.3)]">
+                <i class="fa-solid fa-compass text-gold text-lg"></i>
+            </div>
+            <div class="truncate">
+                <div class="flex items-center gap-2">
+                    <h1 id="campaign-title-display" class="font-display font-bold text-base sm:text-xl tracking-wider text-gold-light uppercase truncate">
+                        New World Atlas
+                    </h1>
+                    <button onclick="openWorldSettingsModal()" title="Edit Campaign Name & Map Image" class="edit-only hidden text-xs text-gold hover:text-white px-1.5 py-0.5 rounded border border-gold-dim/60">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                </div>
+                <p id="campaign-subtitle-display" class="text-[11px] text-gold/80 tracking-widest uppercase hidden sm:block truncate">
+                    Interactive World Map & Campaign Lore
+                </p>
+            </div>
+        </div>
+
+        <!-- Primary Navigation Tabs -->
+        <nav class="flex items-center h-full gap-1 sm:gap-2">
+            <button onclick="switchTab('map')" id="tab-map" class="nav-tab active h-full px-3 sm:px-5 flex items-center gap-2 font-display text-xs sm:text-sm font-semibold tracking-wider uppercase text-gold/70 hover:text-gold-light transition">
+                <i class="fa-solid fa-map-location-dot"></i>
+                <span>World Map</span>
+            </button>
+            <button onclick="switchTab('characters')" id="tab-characters" class="nav-tab h-full px-3 sm:px-5 flex items-center gap-2 font-display text-xs sm:text-sm font-semibold tracking-wider uppercase text-gold/70 hover:text-gold-light transition">
+                <i class="fa-solid fa-users"></i>
+                <span>Characters</span>
+            </button>
+            <button onclick="switchTab('codex')" id="tab-codex" class="nav-tab h-full px-3 sm:px-5 flex items-center gap-2 font-display text-xs sm:text-sm font-semibold tracking-wider uppercase text-gold/70 hover:text-gold-light transition">
+                <i class="fa-solid fa-book-journal-whills"></i>
+                <span>Codex</span>
+            </button>
+        </nav>
+
+        <!-- Right Controls: Sound Toggle, GM Edit Mode & Data Backup -->
+        <div class="flex items-center gap-2">
+            <!-- Sound Toggle Button -->
+            <button id="sound-toggle-btn" onclick="toggleSound()" title="Toggle Interactive Audio" class="p-2 rounded border border-gold-dim bg-obsidian/90 hover:border-gold text-arcane hover:text-gold-light transition">
+                <i id="sound-toggle-icon" class="fa-solid fa-volume-high"></i>
+            </button>
+
+            <!-- GM Edit Mode Toggle -->
+            <button id="edit-mode-btn" onclick="toggleEditMode()" class="px-3 py-1.5 rounded border border-gold-dim bg-obsidian/90 hover:border-gold text-xs font-semibold tracking-wider uppercase flex items-center gap-2 transition shadow-md">
+                <i id="edit-mode-icon" class="fa-solid fa-feather-pointed text-gold"></i>
+                <span id="edit-mode-label" class="hidden md:inline text-gold-light">GM Edit: OFF</span>
+            </button>
+
+            <!-- Data / Share Dropdown Trigger -->
+            <div class="relative">
+                <button onclick="toggleDataMenu()" title="Save, Export & Map Settings" class="p-2 rounded border border-gold-dim bg-obsidian/90 hover:border-gold text-gold hover:text-gold-light transition">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+                <div id="data-dropdown" class="hidden absolute right-0 mt-2 w-64 rounded-lg bg-hexcard border border-gold-dim shadow-2xl py-2 z-50 text-sm">
+                    <div class="px-4 py-1.5 text-[11px] font-display uppercase tracking-widest text-gold border-b border-gold-dim/40">
+                        Campaign & Map Tools
+                    </div>
+                    <button onclick="openWorldSettingsModal(); toggleDataMenu();" class="w-full text-left px-4 py-2.5 hover:bg-obsidian flex items-center gap-2.5 text-gold-light">
+                        <i class="fa-solid fa-image text-gold w-4"></i> Custom Map & Title
+                    </button>
+                    <button onclick="exportWorldJSON(); toggleDataMenu();" class="w-full text-left px-4 py-2.5 hover:bg-obsidian flex items-center gap-2.5 text-gold-light">
+                        <i class="fa-solid fa-download text-arcane w-4"></i> Export Campaign (.JSON)
+                    </button>
+                    <label class="w-full text-left px-4 py-2.5 hover:bg-obsidian flex items-center gap-2.5 text-gold-light cursor-pointer">
+                        <i class="fa-solid fa-upload text-gold w-4"></i> Import Campaign (.JSON)
+                        <input type="file" id="import-json-input" accept=".json" class="hidden" onchange="importWorldJSON(event)">
+                    </label>
+                    <div class="border-t border-gold-dim/40 my-1"></div>
+                    <button onclick="confirmResetDemo(); toggleDataMenu();" class="w-full text-left px-4 py-2 hover:bg-red-950/50 flex items-center gap-2.5 text-red-400 text-xs">
+                        <i class="fa-solid fa-trash-can w-4"></i> Clear All & Reset Blank Slate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- GM Edit Mode Banner (Visible only when Edit Mode is ON) -->
+    <div id="gm-banner" class="hidden bg-gradient-to-r from-amber-950/90 via-yellow-900/80 to-amber-950/90 border-b border-gold px-4 py-1.5 text-xs text-gold-light flex flex-wrap items-center justify-between gap-2 z-30">
+        <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-arcane animate-ping"></span>
+            <span class="font-semibold uppercase tracking-wider text-gold">GM Edit Mode Active:</span>
+            <span id="gm-banner-hint" class="text-gold-light/90">Click anywhere on the map to drop a new location pin, or click existing pins to edit them.</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="openWorldSettingsModal()" class="px-2.5 py-0.5 rounded bg-obsidian/80 border border-gold/60 hover:border-gold text-gold text-[11px] font-medium">
+                <i class="fa-solid fa-map mr-1"></i>Upload Custom Map
+            </button>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MAIN CONTENT AREA
+         ===================================================================== -->
+    <main class="flex-1 relative flex flex-col">
+
+        <!-- =================================================================
+             VIEW 1: INTERACTIVE WORLD MAP
+             ================================================================= -->
+        <section id="view-map" class="relative flex-1 w-full h-[calc(100vh-4rem)] overflow-hidden">
+            <!-- Pan & Zoom Viewport -->
+            <div id="map-viewport" class="w-full h-full relative overflow-hidden touch-none">
+                <!-- Transformable Map World Container (1600 x 1000 logical coordinate space) -->
+                <div id="map-world" class="origin-top-left absolute top-0 left-0 will-change-transform" style="width: 1600px; height: 1000px;">
+                    
+                    <!-- Built-in Clean Blank Canvas Cartography Grid (Ready for pins or custom map upload) -->
+                    <svg id="default-fantasy-map" viewBox="0 0 1600 1000" class="w-full h-full block" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <radialGradient id="oceanGrad" cx="50%" cy="50%" r="70%">
+                                <stop offset="0%" stop-color="#10223d" />
+                                <stop offset="60%" stop-color="#091528" />
+                                <stop offset="100%" stop-color="#050b16" />
+                            </radialGradient>
+                            <pattern id="minorGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#c8aa6e" stroke-width="0.3" stroke-opacity="0.08"/>
+                            </pattern>
+                            <pattern id="majorGrid" width="200" height="200" patternUnits="userSpaceOnUse">
+                                <rect width="200" height="200" fill="url(#minorGrid)" />
+                                <path d="M 200 0 L 0 0 0 200" fill="none" stroke="#c8aa6e" stroke-width="0.6" stroke-opacity="0.18"/>
+                            </pattern>
+                        </defs>
+
+                        <!-- Cartography Background -->
+                        <rect width="1600" height="1000" fill="url(#oceanGrad)" />
+                        <rect width="1600" height="1000" fill="url(#majorGrid)" />
+
+                        <!-- Astrolabe / Celestial Rings -->
+                        <circle cx="800" cy="500" r="240" fill="none" stroke="#c8aa6e" stroke-width="0.6" stroke-opacity="0.14" />
+                        <circle cx="800" cy="500" r="420" fill="none" stroke="#c8aa6e" stroke-width="0.7" stroke-opacity="0.16" stroke-dasharray="6 6" />
+                        <circle cx="800" cy="500" r="640" fill="none" stroke="#c8aa6e" stroke-width="0.7" stroke-opacity="0.12" />
+                        <line x1="0" y1="500" x2="1600" y2="500" stroke="#c8aa6e" stroke-width="0.6" stroke-opacity="0.16" stroke-dasharray="10 5" />
+                        <line x1="800" y1="0" x2="800" y2="1000" stroke="#c8aa6e" stroke-width="0.6" stroke-opacity="0.16" stroke-dasharray="10 5" />
+
+                        <!-- Ornate Compass Rose (Bottom Left) -->
+                        <g transform="translate(135, 865)" opacity="0.7">
+                            <circle cx="0" cy="0" r="56" fill="none" stroke="#c8aa6e" stroke-width="1" />
+                            <circle cx="0" cy="0" r="48" fill="none" stroke="#785a28" stroke-width="1" stroke-dasharray="3 3" />
+                            <polygon points="0,-65 10,-10 65,0 10,10 0,65 -10,10 -65,0 -10,-10" fill="#1a2639" stroke="#c8aa6e" stroke-width="1.2" />
+                            <polygon points="0,-65 10,-10 0,0" fill="#c8aa6e" />
+                            <polygon points="65,0 10,10 0,0" fill="#c8aa6e" />
+                            <polygon points="0,65 -10,10 0,0" fill="#c8aa6e" />
+                            <polygon points="-65,0 -10,-10 0,0" fill="#c8aa6e" />
+                            <text x="-5" y="-72" fill="#f0e6d2" font-family="Cinzel, serif" font-size="13" font-weight="bold">N</text>
+                        </g>
+
+                        <!-- Decorative Map Frame Border -->
+                        <rect x="16" y="16" width="1568" height="968" fill="none" stroke="#785a28" stroke-width="2" opacity="0.6" />
+                        <rect x="24" y="24" width="1552" height="952" fill="none" stroke="#c8aa6e" stroke-width="0.8" opacity="0.35" />
+                    </svg>
+
+                    <!-- Custom Uploaded Map Image (Hidden unless user uploads a custom map) -->
+                    <img id="custom-map-image" src="" alt="Custom World Map" class="hidden w-full h-full object-cover select-none pointer-events-none" />
+
+                    <!-- Interactive Pins Layer -->
+                    <div id="map-pins-layer" class="absolute inset-0">
+                        <!-- Pins injected dynamically via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subtle Vignette Overlay -->
+            <div class="map-vignette absolute inset-0"></div>
+
+            <!-- Empty Map Onboarding Card (Shown automatically when 0 pins & no custom map exist) -->
+            <div id="empty-map-guide" class="hidden absolute inset-0 z-10 pointer-events-none flex items-center justify-center p-4">
+                <div class="pointer-events-auto max-w-md w-full bg-hexdark/90 backdrop-blur-xl border border-gold/80 rounded-2xl p-6 text-center shadow-[0_0_50px_rgba(0,0,0,0.9)]">
+                    <div class="w-12 h-12 rounded-full border border-gold bg-obsidian mx-auto mb-3 flex items-center justify-center shadow-[0_0_15px_rgba(200,170,110,0.25)]">
+                        <i class="fa-solid fa-compass-drafting text-gold text-xl"></i>
+                    </div>
+                    <h2 class="font-display text-xl font-bold text-gold-light tracking-wide mb-1.5">Uncharted Territory</h2>
+                    <p class="text-xs text-gold-light/80 leading-relaxed mb-5">
+                        Your atlas is a blank slate. Upload your world map image or toggle <span class="text-gold font-semibold">GM Edit Mode</span> to click anywhere on the canvas and drop your first location pin.
+                    </p>
+                    <div class="flex flex-wrap items-center justify-center gap-2.5">
+                        <button onclick="openWorldSettingsModal()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-gold-dim to-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110 transition flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-image"></i> Upload Map Image
+                        </button>
+                        <button onclick="enableEditModeAndPrompt()" class="px-4 py-2 rounded-lg bg-obsidian border border-arcane/70 text-arcane hover:bg-arcane/15 font-display font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-location-dot"></i> Place First Pin
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top-Left Map Legend, Quick Search & Filter -->
+            <div class="absolute top-4 left-4 z-20 flex flex-col gap-2 w-[265px] max-w-[calc(100vw-2rem)]">
+                <!-- Interactive Location Quick-Jump Search -->
+                <div class="relative">
+                    <div class="bg-hexdark/90 backdrop-blur-md border border-gold-dim focus-within:border-gold rounded-lg flex items-center px-3 py-2 shadow-xl transition">
+                        <i class="fa-solid fa-magnifying-glass text-gold/70 text-xs mr-2.5"></i>
+                        <input type="text" id="map-quick-search" oninput="handleMapQuickSearch()" onfocus="handleMapQuickSearch()" placeholder="Jump to location or character..."
+                               class="w-full bg-transparent text-xs text-gold-light placeholder-gold/45 focus:outline-none">
+                        <button id="map-search-clear" onclick="clearMapQuickSearch()" class="hidden text-gold/60 hover:text-gold text-xs ml-1">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <!-- Live Search Results Popover -->
+                    <div id="map-search-results" class="hidden absolute left-0 right-0 mt-1.5 bg-hexcard/95 backdrop-blur-xl border border-gold-dim rounded-lg shadow-2xl overflow-hidden z-30 max-h-60 overflow-y-auto">
+                    </div>
+                </div>
+
+                <div class="bg-hexdark/90 backdrop-blur-md border border-gold-dim rounded-lg p-3 shadow-xl">
+                    <div class="text-[11px] font-display uppercase tracking-widest text-gold mb-2 flex items-center justify-between">
+                        <span>Map Legend</span>
+                        <span id="pin-count-badge" class="text-[10px] bg-obsidian px-1.5 py-0.5 rounded border border-gold-dim/50 text-gold-light">0 Sites</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 text-xs">
+                        <button onclick="filterPins('all')" data-pinfilter="all" class="pin-filter-btn active px-2 py-1 rounded bg-gold/20 border border-gold text-gold-light text-[11px] font-medium">
+                            All
+                        </button>
+                        <button onclick="filterPins('region')" data-pinfilter="region" class="pin-filter-btn px-2 py-1 rounded bg-obsidian/80 border border-gold-dim/60 text-gold/80 hover:text-gold-light text-[11px] flex items-center gap-1">
+                            <i class="fa-solid fa-crown text-gold text-[10px]"></i> Capitals
+                        </button>
+                        <button onclick="filterPins('landmark')" data-pinfilter="landmark" class="pin-filter-btn px-2 py-1 rounded bg-obsidian/80 border border-gold-dim/60 text-gold/80 hover:text-gold-light text-[11px] flex items-center gap-1">
+                            <i class="fa-solid fa-monument text-arcane text-[10px]"></i> Landmarks
+                        </button>
+                        <button onclick="filterPins('danger')" data-pinfilter="danger" class="pin-filter-btn px-2 py-1 rounded bg-obsidian/80 border border-gold-dim/60 text-gold/80 hover:text-gold-light text-[11px] flex items-center gap-1">
+                            <i class="fa-solid fa-skull text-red-400 text-[10px]"></i> Dangers
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom-Left Live Cartography Coordinates & Zoom Readout -->
+            <div class="hidden sm:flex items-center gap-3 absolute bottom-5 left-5 z-20 bg-hexdark/85 backdrop-blur-md border border-gold-dim/70 rounded-lg px-3 py-1.5 text-[11px] font-mono text-gold/80 shadow-lg pointer-events-none">
+                <span><i class="fa-solid fa-crosshairs text-arcane mr-1.5"></i><span id="hud-coords">X: 800 • Y: 500</span></span>
+                <span class="text-gold-dim">|</span>
+                <span id="hud-zoom" class="text-gold-light font-semibold">100%</span>
+            </div>
+
+            <!-- Bottom-Right Zoom & Reset Controls -->
+            <div class="absolute bottom-5 right-5 z-20 flex flex-col gap-1.5 bg-hexdark/90 backdrop-blur-md border border-gold-dim rounded-lg p-1.5 shadow-xl">
+                <button onclick="zoomMap(0.25)" title="Zoom In" class="w-9 h-9 rounded hover:bg-obsidian text-gold hover:text-gold-light flex items-center justify-center transition">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+                <div class="h-[1px] bg-gold-dim/40 mx-1"></div>
+                <button onclick="zoomMap(-0.25)" title="Zoom Out" class="w-9 h-9 rounded hover:bg-obsidian text-gold hover:text-gold-light flex items-center justify-center transition">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+                <div class="h-[1px] bg-gold-dim/40 mx-1"></div>
+                <button onclick="resetMapView(true)" title="World Overview (Reset Camera)" class="w-9 h-9 rounded hover:bg-obsidian text-gold hover:text-gold-light flex items-center justify-center transition">
+                    <i class="fa-solid fa-expand"></i>
+                </button>
+            </div>
+
+            <!-- =============================================================
+                 RUNETERRA SLIDE-OVER LORE DRAWER (Location Details)
+                 ============================================================= -->
+            <aside id="lore-drawer" class="fixed top-16 right-0 bottom-0 w-full sm:w-[430px] bg-hexdark/95 backdrop-blur-xl border-l border-gold-dim shadow-[0_0_50px_rgba(0,0,0,0.95)] z-30 transform translate-x-full transition-transform duration-300 ease-out flex flex-col">
+                <!-- Drawer Header Banner -->
+                <div class="relative h-44 bg-gradient-to-br from-obsidian via-slate-900 to-hexcard border-b border-gold-dim shrink-0 flex flex-col justify-end p-6 overflow-hidden">
+                    <!-- Decorative background emblem -->
+                    <i id="drawer-bg-icon" class="fa-solid fa-crown absolute -right-6 -top-6 text-[150px] text-gold/5 pointer-events-none"></i>
+
+                    <!-- Top Drawer Action Buttons -->
+                    <div class="absolute top-4 right-4 flex items-center gap-2">
+                        <button id="drawer-edit-btn" onclick="editCurrentPin()" class="edit-only hidden px-3 py-1.5 rounded bg-obsidian/90 border border-gold text-gold hover:bg-gold hover:text-obsidian text-xs font-semibold transition">
+                            <i class="fa-solid fa-pen mr-1"></i> Edit Location
+                        </button>
+                        <button onclick="closeLoreDrawer()" title="Close Panel" class="w-8 h-8 rounded-full bg-obsidian/90 border border-gold-dim hover:border-gold text-gold-light flex items-center justify-center transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-2 mb-1">
+                        <span id="drawer-type-badge" class="text-[10px] font-display uppercase tracking-widest px-2 py-0.5 rounded bg-gold/20 border border-gold/50 text-gold">
+                            Capital Region
+                        </span>
+                        <span id="drawer-faction-badge" class="text-[11px] text-arcane font-medium truncate">
+                            The Sunsworn Empire
+                        </span>
+                    </div>
+                    <h2 id="drawer-title" class="font-display text-2xl sm:text-3xl font-bold text-gold-light tracking-wide">
+                        Solaria
+                    </h2>
+                    <p id="drawer-subtitle" class="text-xs italic text-gold/80 mt-0.5">
+                        Bastion of the Eternal Dawn
+                    </p>
+                </div>
+
+                <!-- Drawer Scrollable Body -->
+                <div class="p-6 overflow-y-auto flex-1 space-y-6 allow-select">
+                    <!-- Lore Description -->
+                    <div>
+                        <h3 class="font-display text-xs uppercase tracking-widest text-gold mb-2 flex items-center gap-2">
+                            <span class="w-4 h-[1px] bg-gold"></span> Overview & Lore
+                        </h3>
+                        <p id="drawer-description" class="text-sm text-gold-light/90 leading-relaxed whitespace-pre-line">
+                            Location lore appears here.
+                        </p>
+                    </div>
+
+                    <!-- Key Highlights / Rumors -->
+                    <div id="drawer-highlights-box" class="bg-obsidian/80 border border-gold-dim/60 rounded-lg p-4">
+                        <h4 class="font-display text-xs uppercase tracking-widest text-gold mb-2">
+                            <i class="fa-solid fa-scroll mr-1.5 text-arcane"></i> Notable Features & Hooks
+                        </h4>
+                        <p id="drawer-highlights" class="text-xs text-gold-light/85 leading-relaxed whitespace-pre-line">
+                            Key landmarks or campaign hooks.
+                        </p>
+                    </div>
+
+                    <!-- Linked Champions / Characters from this Region -->
+                    <div>
+                        <h3 class="font-display text-xs uppercase tracking-widest text-gold mb-3 flex items-center gap-2">
+                            <span class="w-4 h-[1px] bg-gold"></span> Notable Figures & Champions
+                        </h3>
+                        <div id="drawer-characters-list" class="space-y-2">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <!-- =================================================================
+             VIEW 2: CHARACTERS & CHAMPIONS ROSTER
+             ================================================================= -->
+        <section id="view-characters" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
+            <!-- Section Header -->
+            <div class="text-center max-w-2xl mx-auto mb-8">
+                <p class="font-display text-xs uppercase tracking-[0.25em] text-gold mb-1">Dramatis Personae</p>
+                <h2 class="font-display text-3xl sm:text-4xl font-bold text-gold-light tracking-wide">Heroes, Rulers & Legends</h2>
+                <div class="w-24 h-[2px] bg-gradient-to-r from-transparent via-gold to-transparent mx-auto mt-3"></div>
+            </div>
+
+            <!-- Filter & Search Bar -->
+            <div class="bg-hexcard border border-gold-dim/70 rounded-xl p-4 mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-lg">
+                <!-- Search Input -->
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gold/70 text-sm"></i>
+                    <input type="text" id="char-search-input" oninput="renderCharactersGrid()" placeholder="Search characters by name, title, or faction..."
+                           class="w-full bg-obsidian border border-gold-dim/70 focus:border-gold rounded-lg pl-10 pr-4 py-2 text-sm text-gold-light placeholder-gold/40 focus:outline-none">
+                </div>
+
+                <!-- Region Filter Dropdown -->
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="char-region-filter" onchange="renderCharactersGrid()"
+                            class="bg-obsidian border border-gold-dim/70 focus:border-gold rounded-lg px-3.5 py-2 text-sm text-gold-light focus:outline-none">
+                        <option value="all">All Regions</option>
+                    </select>
+
+                    <!-- Add New Character Button (Shown in Edit Mode or Always accessible) -->
+                    <button onclick="openCharacterFormModal()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-gold-dim to-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110 transition flex items-center gap-2 shadow-md">
+                        <i class="fa-solid fa-user-plus"></i> New Character
+                    </button>
+                </div>
+            </div>
+
+            <!-- Characters Grid -->
+            <div id="characters-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Character cards injected dynamically -->
+            </div>
+        </section>
+
+        <!-- =================================================================
+             VIEW 3: WORLD LORE & CODEX
+             ================================================================= -->
+        <section id="view-codex" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
+            <div class="text-center max-w-2xl mx-auto mb-8">
+                <p class="font-display text-xs uppercase tracking-[0.25em] text-gold mb-1">The Great Archive</p>
+                <h2 class="font-display text-3xl sm:text-4xl font-bold text-gold-light tracking-wide">World Lore & Codex</h2>
+                <div class="w-24 h-[2px] bg-gradient-to-r from-transparent via-gold to-transparent mx-auto mt-3"></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <!-- Left Category Sidebar -->
+                <div class="lg:col-span-3 bg-hexcard border border-gold-dim/70 rounded-xl p-4 space-y-1.5 sticky top-20">
+                    <div class="text-[11px] font-display uppercase tracking-widest text-gold px-2 pb-2 border-b border-gold-dim/40 mb-2">
+                        Knowledge Categories
+                    </div>
+                    <button onclick="filterCodex('all')" data-codexcat="all" class="codex-cat-btn active w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium bg-gold/15 text-gold-light border border-gold/50 flex items-center justify-between">
+                        <span><i class="fa-solid fa-layer-group text-gold w-5"></i> All Entries</span>
+                    </button>
+                    <button onclick="filterCodex('History & Eras')" data-codexcat="History & Eras" class="codex-cat-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gold/80 hover:bg-obsidian hover:text-gold-light flex items-center justify-between">
+                        <span><i class="fa-solid fa-hourglass-half text-gold w-5"></i> History & Eras</span>
+                    </button>
+                    <button onclick="filterCodex('Factions & Orders')" data-codexcat="Factions & Orders" class="codex-cat-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gold/80 hover:bg-obsidian hover:text-gold-light flex items-center justify-between">
+                        <span><i class="fa-solid fa-shield-halved text-gold w-5"></i> Factions & Orders</span>
+                    </button>
+                    <button onclick="filterCodex('Magic & Cosmology')" data-codexcat="Magic & Cosmology" class="codex-cat-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gold/80 hover:bg-obsidian hover:text-gold-light flex items-center justify-between">
+                        <span><i class="fa-solid fa-wand-sparkles text-arcane w-5"></i> Magic & Cosmology</span>
+                    </button>
+                    <button onclick="filterCodex('Relics & Bestiary')" data-codexcat="Relics & Bestiary" class="codex-cat-btn w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gold/80 hover:bg-obsidian hover:text-gold-light flex items-center justify-between">
+                        <span><i class="fa-solid fa-dragon text-red-400 w-5"></i> Relics & Bestiary</span>
+                    </button>
+
+                    <div class="pt-3 border-t border-gold-dim/40 mt-3">
+                        <button onclick="openCodexFormModal()" class="w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-gold-dim to-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110 transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-plus"></i> Add Lore Entry
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Lore Entries List -->
+                <div id="codex-entries-list" class="lg:col-span-9 space-y-5 allow-select">
+                    <!-- Codex articles injected dynamically -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- =====================================================================
+         MODAL 1: CHARACTER DETAIL VIEW (Champion Bio Modal)
+         ===================================================================== -->
+    <div id="character-detail-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-hexcard border border-gold rounded-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.95)]">
+            <!-- Modal Banner -->
+            <div class="relative bg-gradient-to-r from-obsidian via-slate-900 to-obsidian border-b border-gold-dim p-6 flex items-center gap-5">
+                <div id="char-modal-avatar" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-gold bg-hexdark flex items-center justify-center shrink-0 shadow-[0_0_20px_rgba(200,170,110,0.3)] overflow-hidden">
+                    <i class="fa-solid fa-user-shield text-3xl text-gold"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span id="char-modal-role" class="text-[10px] font-display uppercase tracking-widest px-2 py-0.5 rounded bg-arcane/15 border border-arcane/50 text-arcane">
+                            Vanguard
+                        </span>
+                        <span id="char-modal-status" class="text-[11px] text-gold/80">
+                            • Alive
+                        </span>
+                    </div>
+                    <h3 id="char-modal-name" class="font-display text-2xl sm:text-3xl font-bold text-gold-light truncate">
+                        Character Name
+                    </h3>
+                    <p id="char-modal-title" class="text-sm italic text-gold truncate">
+                        The Epithet
+                    </p>
+                </div>
+                <button onclick="closeModal('character-detail-modal')" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-obsidian border border-gold-dim hover:border-gold text-gold-light flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto space-y-5 allow-select">
+                <!-- Metadata Pills -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="bg-obsidian/80 border border-gold-dim/50 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-wider text-gold/70">Home Region</div>
+                            <div id="char-modal-region" class="text-sm font-semibold text-gold-light">Solaria</div>
+                        </div>
+                        <button id="char-modal-locate-btn" class="px-2.5 py-1 rounded bg-gold/15 hover:bg-gold/30 border border-gold/50 text-gold text-xs font-medium flex items-center gap-1 transition">
+                            <i class="fa-solid fa-location-crosshairs"></i> Map
+                        </button>
+                    </div>
+                    <div class="bg-obsidian/80 border border-gold-dim/50 rounded-lg p-3">
+                        <div class="text-[10px] uppercase tracking-wider text-gold/70">Faction / Allegiance</div>
+                        <div id="char-modal-faction" class="text-sm font-semibold text-gold-light">Order of the Sun</div>
+                    </div>
+                </div>
+
+                <!-- Biography -->
+                <div>
+                    <h4 class="font-display text-xs uppercase tracking-widest text-gold mb-2">Biography & Lore</h4>
+                    <p id="char-modal-bio" class="text-sm text-gold-light/90 leading-relaxed whitespace-pre-line">
+                        Biography text.
+                    </p>
+                </div>
+
+                <!-- Traits / Abilities / Notes -->
+                <div class="bg-obsidian/70 border border-gold-dim/50 rounded-lg p-4">
+                    <h4 class="font-display text-xs uppercase tracking-widest text-gold mb-1.5">Signature Traits, Abilities & Gear</h4>
+                    <p id="char-modal-traits" class="text-xs text-gold-light/85 leading-relaxed whitespace-pre-line">
+                        Traits text.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="border-t border-gold-dim/60 bg-obsidian/90 px-6 py-3 flex items-center justify-between">
+                <button id="char-modal-delete-btn" onclick="deleteCurrentCharacter()" class="edit-only hidden text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-trash"></i> Delete Character
+                </button>
+                <div class="flex items-center gap-2 ml-auto">
+                    <button id="char-modal-edit-btn" onclick="editCurrentCharacter()" class="px-4 py-1.5 rounded border border-gold text-gold hover:bg-gold hover:text-obsidian text-xs font-semibold transition">
+                        <i class="fa-solid fa-pen mr-1"></i> Edit Character
+                    </button>
+                    <button onclick="closeModal('character-detail-modal')" class="px-4 py-1.5 rounded bg-hexcard border border-gold-dim text-gold-light text-xs font-semibold hover:border-gold transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MODAL 2: ADD / EDIT LOCATION PIN FORM
+         ===================================================================== -->
+    <div id="pin-form-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-hexcard border border-gold rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div class="bg-obsidian border-b border-gold-dim px-6 py-4 flex items-center justify-between">
+                <h3 id="pin-form-heading" class="font-display text-lg font-bold text-gold-light">Add Map Location</h3>
+                <button onclick="closeModal('pin-form-modal')" class="text-gold hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="pin-form" onsubmit="savePinForm(event)" class="p-6 overflow-y-auto space-y-4 text-sm">
+                <input type="hidden" id="pin-id">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Location Name *</label>
+                        <input type="text" id="pin-name" required placeholder="e.g., Silvergate" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Pin Type</label>
+                        <select id="pin-type" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                            <option value="region">Capital / Major Region</option>
+                            <option value="landmark">Landmark / Town</option>
+                            <option value="danger">Dungeon / Hazard</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Subtitle / Epithet</label>
+                        <input type="text" id="pin-subtitle" placeholder="e.g., City of Spires" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Ruling Faction</label>
+                        <input type="text" id="pin-faction" placeholder="e.g., The Iron Vanguard" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Map X (0 - 1600)</label>
+                        <input type="number" id="pin-x" min="0" max="1600" required class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Map Y (0 - 1000)</label>
+                        <input type="number" id="pin-y" min="0" max="1000" required class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Lore & History *</label>
+                    <textarea id="pin-description" rows="4" required placeholder="Describe this place, its culture, architecture, and history..." class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Notable Features / Campaign Hooks</label>
+                    <textarea id="pin-highlights" rows="2" placeholder="Taverns, political tensions, quests, or rumors..." class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none"></textarea>
+                </div>
+
+                <div class="pt-3 border-t border-gold-dim/50 flex items-center justify-between">
+                    <button type="button" id="pin-delete-btn" onclick="deletePinFromForm()" class="hidden text-xs text-red-400 hover:text-red-300">
+                        <i class="fa-solid fa-trash mr-1"></i> Delete Pin
+                    </button>
+                    <div class="flex gap-2 ml-auto">
+                        <button type="button" onclick="closeModal('pin-form-modal')" class="px-4 py-2 rounded border border-gold-dim text-gold-light text-xs">Cancel</button>
+                        <button type="submit" class="px-5 py-2 rounded bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110">Save Location</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MODAL 3: ADD / EDIT CHARACTER FORM
+         ===================================================================== -->
+    <div id="char-form-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-hexcard border border-gold rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div class="bg-obsidian border-b border-gold-dim px-6 py-4 flex items-center justify-between">
+                <h3 id="char-form-heading" class="font-display text-lg font-bold text-gold-light">Create Character</h3>
+                <button onclick="closeModal('char-form-modal')" class="text-gold hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="char-form" onsubmit="saveCharacterForm(event)" class="p-6 overflow-y-auto space-y-4 text-sm">
+                <input type="hidden" id="char-id">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Character Name *</label>
+                        <input type="text" id="char-name" required placeholder="e.g., Kaelen Vance" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Title / Epithet *</label>
+                        <input type="text" id="char-title" required placeholder="e.g., The Ashen Blade" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Home Region (Links to Map)</label>
+                        <select id="char-region-select" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                            <!-- Populated with map pins -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Class / Role</label>
+                        <input type="text" id="char-role" placeholder="e.g., Mage, Warlord, Rogue" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Faction / Guild</label>
+                        <input type="text" id="char-faction" placeholder="e.g., The Eclipse Covenant" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Status</label>
+                        <input type="text" id="char-status" value="Alive" placeholder="Alive / Missing / Deceased" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Portrait Image URL (Optional)</label>
+                    <input type="url" id="char-image" placeholder="https://... (leave blank for Runeterra crest icon)" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Biography & Backstory *</label>
+                    <textarea id="char-bio" rows="4" required placeholder="Character's origin, motivations, and role in the campaign..." class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Abilities, Stats & Notable Gear</label>
+                    <textarea id="char-traits" rows="2" placeholder="Signature weapons, magic, or personality traits..." class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none"></textarea>
+                </div>
+
+                <div class="pt-3 border-t border-gold-dim/50 flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('char-form-modal')" class="px-4 py-2 rounded border border-gold-dim text-gold-light text-xs">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110">Save Character</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MODAL 4: ADD / EDIT CODEX ENTRY FORM
+         ===================================================================== -->
+    <div id="codex-form-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-hexcard border border-gold rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div class="bg-obsidian border-b border-gold-dim px-6 py-4 flex items-center justify-between">
+                <h3 id="codex-form-heading" class="font-display text-lg font-bold text-gold-light">Add Codex Lore Entry</h3>
+                <button onclick="closeModal('codex-form-modal')" class="text-gold hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="codex-form" onsubmit="saveCodexForm(event)" class="p-6 overflow-y-auto space-y-4 text-sm">
+                <input type="hidden" id="codex-id">
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Entry Title *</label>
+                    <input type="text" id="codex-title" required placeholder="e.g., The Sundering of the Veil" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Category</label>
+                        <select id="codex-category" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                            <option value="History & Eras">History & Eras</option>
+                            <option value="Factions & Orders">Factions & Orders</option>
+                            <option value="Magic & Cosmology">Magic & Cosmology</option>
+                            <option value="Relics & Bestiary">Relics & Bestiary</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gold uppercase tracking-wider mb-1">Era / Tag</label>
+                        <input type="text" id="codex-tag" placeholder="e.g., First Age / Arcane" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Lore Content *</label>
+                    <textarea id="codex-content" rows="6" required placeholder="Write the historical records, magic rules, or faction details..." class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none"></textarea>
+                </div>
+                <div class="pt-3 border-t border-gold-dim/50 flex justify-end gap-2">
+                    <button type="button" onclick="closeModal('codex-form-modal')" class="px-4 py-2 rounded border border-gold-dim text-gold-light text-xs">Cancel</button>
+                    <button type="submit" class="px-5 py-2 rounded bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110">Save Entry</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         MODAL 5: CAMPAIGN & CUSTOM MAP SETTINGS
+         ===================================================================== -->
+    <div id="world-settings-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-hexcard border border-gold rounded-xl max-w-md w-full overflow-hidden flex flex-col shadow-2xl">
+            <div class="bg-obsidian border-b border-gold-dim px-6 py-4 flex items-center justify-between">
+                <h3 class="font-display text-lg font-bold text-gold-light">Campaign & Map Settings</h3>
+                <button onclick="closeModal('world-settings-modal')" class="text-gold hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-sm">
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Campaign / World Name</label>
+                    <input type="text" id="settings-world-name" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1">Subtitle</label>
+                    <input type="text" id="settings-world-subtitle" class="w-full bg-obsidian border border-gold-dim rounded px-3 py-2 text-gold-light focus:border-gold focus:outline-none">
+                </div>
+                <div class="pt-2 border-t border-gold-dim/40">
+                    <label class="block text-xs text-gold uppercase tracking-wider mb-1.5">Custom World Map Image</label>
+                    <p class="text-xs text-gold-light/70 mb-2">Upload your own map exported from Inkarnate, Azgaar, or Wonderdraft (recommended 16:10 ratio).</p>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="px-3.5 py-2 rounded bg-obsidian border border-gold text-gold hover:bg-gold hover:text-obsidian text-xs font-semibold cursor-pointer transition flex items-center gap-2">
+                            <i class="fa-solid fa-upload"></i> Upload Map Image
+                            <input type="file" accept="image/*" class="hidden" onchange="handleCustomMapUpload(event)">
+                        </label>
+                        <button type="button" onclick="clearCustomMap()" class="px-3 py-2 rounded bg-obsidian border border-gold-dim text-gold-light/70 hover:text-white text-xs">
+                            Use Default Built-In Map
+                        </button>
+                    </div>
+                </div>
+                <div class="pt-3 border-t border-gold-dim/50 flex justify-end gap-2">
+                    <button onclick="closeModal('world-settings-modal')" class="px-4 py-2 rounded border border-gold-dim text-gold-light text-xs">Cancel</button>
+                    <button onclick="saveWorldSettings()" class="px-5 py-2 rounded bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Toast Notification (Replaces alert()) -->
+    <div id="toast-notification" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-opacity duration-300">
+        <div class="bg-obsidian border border-gold px-5 py-2.5 rounded-full shadow-[0_0_25px_rgba(200,170,110,0.4)] flex items-center gap-2.5 text-xs font-medium text-gold-light">
+            <i class="fa-solid fa-sparkles text-arcane"></i>
+            <span id="toast-message">Saved!</span>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         JAVASCRIPT APPLICATION LOGIC
+         ===================================================================== -->
+    <script>
+        // ===================================================================
+        // 0. HEXTECH AUDIO ENGINE (Tone.js Synthesized Sound Effects)
+        // ===================================================================
+        const SoundFX = {
+            enabled: true,
+            initialized: false,
+            zoomSynth: null,
+            uiSynth: null,
+            glideSynth: null,
+            lastZoomSoundTime: 0,
+
+            init() {
+                if (this.initialized || typeof Tone === 'undefined') return;
+                try {
+                    // Subtle crystalline chime for zoom steps & pin hover
+                    this.zoomSynth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: 'sine' },
+                        envelope: { attack: 0.008, decay: 0.14, sustain: 0.01, release: 0.25 },
+                        volume: -18
+                    }).toDestination();
+
+                    // Warm harmonic synth for camera glide & drawer open/close
+                    this.glideSynth = new Tone.PolySynth(Tone.TriangleSynth, {
+                        oscillator: { type: 'triangle' },
+                        envelope: { attack: 0.04, decay: 0.35, sustain: 0.05, release: 0.6 },
+                        volume: -16
+                    }).toDestination();
+
+                    // Crisp mechanical click for tabs & buttons
+                    this.uiSynth = new Tone.MembraneSynth({
+                        pitchDecay: 0.015,
+                        octaves: 2.5,
+                        envelope: { attack: 0.002, decay: 0.07, sustain: 0 },
+                        volume: -20
+                    }).toDestination();
+
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn("Audio init skipped:", e);
+                }
+            },
+
+            async ensureStarted() {
+                if (!this.enabled) return false;
+                if (!this.initialized) this.init();
+                if (typeof Tone !== 'undefined' && Tone.context && Tone.context.state !== 'running') {
+                    try {
+                        await Tone.start();
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                return this.initialized;
+            },
+
+            // Pitch scales dynamically with current zoom level!
+            async playZoom(scale, isZoomingIn = true) {
+                if (!(await this.ensureStarted())) return;
+                const now = performance.now();
+                // Throttle wheel tick sounds so fast scrolling sounds smooth
+                if (now - this.lastZoomSoundTime < 65) return;
+                this.lastZoomSoundTime = now;
+
+                // Map scale (0.5 to 3.2) to musical pentatonic frequencies
+                const notes = ['C4', 'D4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5', 'A5'];
+                const normalized = Math.min(1, Math.max(0, (scale - 0.5) / 2.7));
+                const idx = Math.min(notes.length - 1, Math.floor(normalized * notes.length));
+                const note = notes[idx];
+
+                this.zoomSynth.triggerAttackRelease(note, '32n', undefined, isZoomingIn ? 0.55 : 0.35);
+            },
+
+            async playCameraGlide(zoomingIn = true) {
+                if (!(await this.ensureStarted())) return;
+                const t = Tone.now();
+                if (zoomingIn) {
+                    this.glideSynth.triggerAttackRelease(['D4', 'A4'], '8n', t, 0.45);
+                    this.glideSynth.triggerAttackRelease(['F#5'], '8n', t + 0.08, 0.35);
+                } else {
+                    this.glideSynth.triggerAttackRelease(['A4', 'E4'], '8n', t, 0.35);
+                    this.glideSynth.triggerAttackRelease(['D4'], '8n', t + 0.07, 0.25);
+                }
+            },
+
+            async playPinHover() {
+                if (!(await this.ensureStarted())) return;
+                this.zoomSynth.triggerAttackRelease('E5', '64n', undefined, 0.22);
+            },
+
+            async playClick(pitch = 'G3') {
+                if (!(await this.ensureStarted())) return;
+                this.uiSynth.triggerAttackRelease(pitch, '32n', undefined, 0.4);
+            },
+
+            async playSave() {
+                if (!(await this.ensureStarted())) return;
+                const t = Tone.now();
+                this.zoomSynth.triggerAttackRelease('E5', '16n', t, 0.45);
+                this.zoomSynth.triggerAttackRelease('B5', '8n', t + 0.07, 0.5);
+            }
+        };
+
+        function toggleSound() {
+            SoundFX.enabled = !SoundFX.enabled;
+            const icon = document.getElementById('sound-toggle-icon');
+            const btn = document.getElementById('sound-toggle-btn');
+            if (SoundFX.enabled) {
+                icon.className = 'fa-solid fa-volume-high';
+                btn.classList.add('text-arcane');
+                btn.classList.remove('text-gold/50');
+                SoundFX.playSave();
+                showToast("Interactive sound effects enabled");
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark';
+                btn.classList.remove('text-arcane');
+                btn.classList.add('text-gold/50');
+                showToast("Sound muted");
+            }
+        }
+
+        // ===================================================================
+        // 1. BLANK SLATE WORLD DATA (READY FOR YOUR CUSTOM MAP & LORE)
+        // ===================================================================
+        const DEFAULT_CAMPAIGN_DATA = {
+            meta: {
+                title: "New World Atlas",
+                subtitle: "Interactive World Map & Campaign Lore",
+                // Paste your direct hosted map image URL (.png / .jpg) below to bake it in for players:
+                customMapDataUrl: ""
+            },
+            pins: [],
+            characters: [],
+            codex: []
+        };
+
+        // ===================================================================
+        // 2. APPLICATION STATE & STORAGE
+        // ===================================================================
+        const STORAGE_KEY = 'campaign_atlas_blank_slate_v1';
+        let campaignData = loadCampaignData();
+        let isEditMode = false;
+        let activeTab = 'map';
+        let currentPinFilter = 'all';
+        let currentCodexCategory = 'all';
+        let selectedPinId = null;
+        let selectedCharacterId = null;
+
+        // Map Pan & Zoom State
+        const MAP_WIDTH = 1600;
+        const MAP_HEIGHT = 1000;
+        const MAX_ZOOM = 3.2;
+        const PIN_FOCUS_ZOOM = 2.35; // Close-up zoom scale when inspecting a point of interest
+        let mapScale = 1;
+        let mapX = 0;
+        let mapY = 0;
+        let isDraggingMap = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let dragMovedDistance = 0;
+        let cameraGlideTimer = null;
+
+        function loadCampaignData() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    return JSON.parse(saved);
+                }
+            } catch (e) {
+                console.warn("Could not load from localStorage:", e);
+            }
+            return JSON.parse(JSON.stringify(DEFAULT_CAMPAIGN_DATA));
+        }
+
+        function saveCampaignData() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(campaignData));
+            } catch (e) {
+                showToast("Warning: Local storage limit reached (try smaller map image).");
+            }
+        }
+
+        // ===================================================================
+        // 3. INITIALIZATION
+        // ===================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            applyWorldMeta();
+            renderMapPins();
+            populateRegionDropdowns();
+            renderCharactersGrid();
+            renderCodexEntries();
+            setupMapInteractions();
+            // Center map on load after layout settles
+            setTimeout(resetMapView, 50);
+        });
+
+        window.addEventListener('resize', () => {
+            if (activeTab === 'map') {
+                constrainMapBounds();
+                updateMapTransform();
+            }
+        });
+
+        function applyWorldMeta() {
+            document.getElementById('campaign-title-display').textContent = campaignData.meta.title || "New World Atlas";
+            document.getElementById('campaign-subtitle-display').textContent = campaignData.meta.subtitle || "";
+            document.title = `${campaignData.meta.title} — Interactive Campaign Atlas`;
+
+            const customImg = document.getElementById('custom-map-image');
+            const defaultSvg = document.getElementById('default-fantasy-map');
+            if (campaignData.meta.customMapDataUrl) {
+                customImg.src = campaignData.meta.customMapDataUrl;
+                customImg.classList.remove('hidden');
+                defaultSvg.classList.add('hidden');
+            } else {
+                customImg.classList.add('hidden');
+                defaultSvg.classList.remove('hidden');
+            }
+            updateEmptyMapGuide();
+        }
+
+        function updateEmptyMapGuide() {
+            const guide = document.getElementById('empty-map-guide');
+            if (!guide) return;
+            const isBlank = campaignData.pins.length === 0 && !campaignData.meta.customMapDataUrl;
+            guide.classList.toggle('hidden', !isBlank);
+        }
+
+        function enableEditModeAndPrompt() {
+            if (!isEditMode) toggleEditMode();
+            document.getElementById('empty-map-guide').classList.add('hidden');
+            showToast("Click anywhere on the map to place your first pin!");
+        }
+
+        // ===================================================================
+        // 4. NAVIGATION TABS & GM EDIT MODE
+        // ===================================================================
+        function switchTab(tabName) {
+            SoundFX.playClick('A3');
+            activeTab = tabName;
+            ['map', 'characters', 'codex'].forEach(t => {
+                document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tabName);
+                document.getElementById(`tab-${t}`).classList.toggle('active', t === tabName);
+            });
+
+            if (tabName !== 'map') {
+                closeLoreDrawer();
+            } else {
+                setTimeout(() => {
+                    constrainMapBounds();
+                    updateMapTransform();
+                }, 20);
+            }
+        }
+
+        function toggleEditMode() {
+            SoundFX.playClick(isEditMode ? 'E3' : 'B3');
+            isEditMode = !isEditMode;
+            const btn = document.getElementById('edit-mode-btn');
+            const label = document.getElementById('edit-mode-label');
+            const banner = document.getElementById('gm-banner');
+            const viewport = document.getElementById('map-viewport');
+
+            if (isEditMode) {
+                btn.classList.add('border-arcane', 'bg-arcane/15');
+                label.textContent = "GM Edit: ON";
+                label.classList.add('text-arcane');
+                banner.classList.remove('hidden');
+                viewport.classList.add('edit-placing');
+                document.querySelectorAll('.edit-only').forEach(el => el.classList.remove('hidden'));
+                showToast("GM Edit Mode enabled — Click the map to add pins!");
+            } else {
+                btn.classList.remove('border-arcane', 'bg-arcane/15');
+                label.textContent = "GM Edit: OFF";
+                label.classList.remove('text-arcane');
+                banner.classList.add('hidden');
+                viewport.classList.remove('edit-placing');
+                document.querySelectorAll('.edit-only').forEach(el => el.classList.add('hidden'));
+            }
+            renderCharactersGrid();
+            renderCodexEntries();
+        }
+
+        // ===================================================================
+        // 5. INTERACTIVE MAP PAN, ZOOM & PIN PLACEMENT
+        // ===================================================================
+        function spawnMapRipple(x, y) {
+            const layer = document.getElementById('map-pins-layer');
+            if (!layer) return;
+            const ripple = document.createElement('div');
+            ripple.className = 'map-ripple';
+            ripple.style.left = `${x}px`;
+            ripple.style.top = `${y}px`;
+            layer.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 700);
+        }
+
+        function setupMapInteractions() {
+            const viewport = document.getElementById('map-viewport');
+
+            // Mouse Drag to Pan
+            viewport.addEventListener('mousedown', (e) => {
+                if (e.target.closest('.map-pin-btn')) return;
+                stopCameraGlide(); // Cancel smooth transition immediately for 1:1 manual drag
+                isDraggingMap = true;
+                dragMovedDistance = 0;
+                dragStartX = e.clientX - mapX;
+                dragStartY = e.clientY - mapY;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                // Update live coordinate HUD when hovering over map
+                if (activeTab === 'map') {
+                    const rect = viewport.getBoundingClientRect();
+                    const worldX = Math.max(0, Math.min(MAP_WIDTH, Math.round((e.clientX - rect.left - mapX) / mapScale)));
+                    const worldY = Math.max(0, Math.min(MAP_HEIGHT, Math.round((e.clientY - rect.top - mapY) / mapScale)));
+                    const hudCoords = document.getElementById('hud-coords');
+                    if (hudCoords) hudCoords.textContent = `X: ${worldX} • Y: ${worldY}`;
+                }
+
+                if (!isDraggingMap) return;
+                const dx = (e.clientX - dragStartX) - mapX;
+                const dy = (e.clientY - dragStartY) - mapY;
+                dragMovedDistance += Math.hypot(dx, dy);
+                mapX = e.clientX - dragStartX;
+                mapY = e.clientY - dragStartY;
+                constrainMapBounds();
+                updateMapTransform();
+            });
+
+            window.addEventListener('mouseup', (e) => {
+                if (!isDraggingMap) return;
+                isDraggingMap = false;
+
+                // If user clicked (didn't drag) on empty map space -> ripple feedback & place pin in Edit Mode
+                if (dragMovedDistance < 6 && !e.target.closest('.map-pin-btn')) {
+                    const rect = viewport.getBoundingClientRect();
+                    const clickX = Math.round((e.clientX - rect.left - mapX) / mapScale);
+                    const clickY = Math.round((e.clientY - rect.top - mapY) / mapScale);
+                    if (clickX >= 0 && clickX <= MAP_WIDTH && clickY >= 0 && clickY <= MAP_HEIGHT) {
+                        spawnMapRipple(clickX, clickY);
+                        if (isEditMode) {
+                            SoundFX.playClick('C4');
+                            openPinFormModal(null, clickX, clickY);
+                        }
+                    }
+                }
+            });
+
+            // Double-click anywhere on the map to smoothly zoom in on that spot
+            viewport.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.map-pin-btn')) return;
+                const rect = viewport.getBoundingClientRect();
+                const clickX = Math.round((e.clientX - rect.left - mapX) / mapScale);
+                const clickY = Math.round((e.clientY - rect.top - mapY) / mapScale);
+                if (clickX >= 0 && clickX <= MAP_WIDTH && clickY >= 0 && clickY <= MAP_HEIGHT) {
+                    const nextScale = Math.min(mapScale * 1.45, MAX_ZOOM);
+                    const centerX = viewport.clientWidth / 2;
+                    const centerY = viewport.clientHeight / 2;
+                    mapScale = nextScale;
+                    mapX = centerX - clickX * mapScale;
+                    mapY = centerY - clickY * mapScale;
+                    constrainMapBounds();
+                    startCameraGlide(550);
+                    updateMapTransform();
+                    SoundFX.playZoom(mapScale, true);
+                }
+            });
+
+            // Mouse Wheel Zoom (Zooms toward cursor with dynamic pitch sound)
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                stopCameraGlide(); // Instant response on manual wheel zoom
+                const rect = viewport.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const isZoomingIn = e.deltaY < 0;
+                const zoomFactor = isZoomingIn ? 1.15 : 0.87;
+                const newScale = Math.min(Math.max(mapScale * zoomFactor, getMinScale()), MAX_ZOOM);
+
+                if (Math.abs(newScale - mapScale) > 0.001) {
+                    SoundFX.playZoom(newScale, isZoomingIn);
+                }
+
+                mapX = mouseX - (mouseX - mapX) * (newScale / mapScale);
+                mapY = mouseY - (mouseY - mapY) * (newScale / mapScale);
+                mapScale = newScale;
+
+                constrainMapBounds();
+                updateMapTransform();
+            }, { passive: false });
+
+            // Touch Support (Single finger pan + Pinch zoom)
+            let initialPinchDist = null;
+            let initialScale = 1;
+
+            viewport.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.map-pin-btn')) return;
+                stopCameraGlide();
+                if (e.touches.length === 1) {
+                    isDraggingMap = true;
+                    dragMovedDistance = 0;
+                    dragStartX = e.touches[0].clientX - mapX;
+                    dragStartY = e.touches[0].clientY - mapY;
+                } else if (e.touches.length === 2) {
+                    isDraggingMap = false;
+                    initialPinchDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    initialScale = mapScale;
+                }
+            }, { passive: true });
+
+            viewport.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1 && isDraggingMap) {
+                    const dx = (e.touches[0].clientX - dragStartX) - mapX;
+                    const dy = (e.touches[0].clientY - dragStartY) - mapY;
+                    dragMovedDistance += Math.hypot(dx, dy);
+                    mapX = e.touches[0].clientX - dragStartX;
+                    mapY = e.touches[0].clientY - dragStartY;
+                    constrainMapBounds();
+                    updateMapTransform();
+                } else if (e.touches.length === 2 && initialPinchDist) {
+                    e.preventDefault();
+                    const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const newScale = Math.min(Math.max(initialScale * (dist / initialPinchDist), getMinScale()), MAX_ZOOM);
+                    const rect = viewport.getBoundingClientRect();
+                    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+                    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+
+                    mapX = midX - (midX - mapX) * (newScale / mapScale);
+                    mapY = midY - (midY - mapY) * (newScale / mapScale);
+                    mapScale = newScale;
+                    constrainMapBounds();
+                    updateMapTransform();
+                }
+            }, { passive: false });
+
+            viewport.addEventListener('touchend', () => {
+                isDraggingMap = false;
+                initialPinchDist = null;
+            });
+        }
+
+        function getMinScale() {
+            const viewport = document.getElementById('map-viewport');
+            if (!viewport) return 0.5;
+            return Math.min(viewport.clientWidth / MAP_WIDTH, viewport.clientHeight / MAP_HEIGHT) * 0.85;
+        }
+
+        function startCameraGlide(durationMs = 850) {
+            const world = document.getElementById('map-world');
+            if (!world) return;
+            world.classList.add('camera-gliding');
+            clearTimeout(cameraGlideTimer);
+            cameraGlideTimer = setTimeout(() => {
+                world.classList.remove('camera-gliding');
+            }, durationMs + 50);
+        }
+
+        function stopCameraGlide() {
+            const world = document.getElementById('map-world');
+            if (!world) return;
+            clearTimeout(cameraGlideTimer);
+            world.classList.remove('camera-gliding');
+        }
+
+        function resetMapView(animate = false) {
+            const viewport = document.getElementById('map-viewport');
+            if (!viewport) return;
+            const scaleX = viewport.clientWidth / MAP_WIDTH;
+            const scaleY = viewport.clientHeight / MAP_HEIGHT;
+            mapScale = Math.max(scaleX, scaleY);
+            // If screen is very narrow, fit nicely
+            if (viewport.clientWidth < 768) {
+                mapScale = Math.min(scaleX * 1.4, scaleY);
+            }
+            mapX = (viewport.clientWidth - MAP_WIDTH * mapScale) / 2;
+            mapY = (viewport.clientHeight - MAP_HEIGHT * mapScale) / 2;
+            constrainMapBounds();
+            if (animate) {
+                startCameraGlide(850);
+                SoundFX.playCameraGlide(false);
+            } else {
+                stopCameraGlide();
+            }
+            updateMapTransform();
+        }
+
+        function zoomMap(delta) {
+            const viewport = document.getElementById('map-viewport');
+            const centerX = viewport.clientWidth / 2;
+            const centerY = viewport.clientHeight / 2;
+            const newScale = Math.min(Math.max(mapScale + delta, getMinScale()), MAX_ZOOM);
+
+            SoundFX.playZoom(newScale, delta > 0);
+            mapX = centerX - (centerX - mapX) * (newScale / mapScale);
+            mapY = centerY - (centerY - mapY) * (newScale / mapScale);
+            mapScale = newScale;
+            constrainMapBounds();
+            startCameraGlide(320);
+            updateMapTransform();
+        }
+
+        function focusMapOnCoordinates(targetX, targetY) {
+            const viewport = document.getElementById('map-viewport');
+            if (!viewport) return;
+
+            // Smoothly zoom in close to inspect the point of interest
+            const targetScale = Math.min(Math.max(mapScale, PIN_FOCUS_ZOOM), MAX_ZOOM);
+            mapScale = targetScale;
+
+            // Offset horizontally on desktop (sm: 640px+) so the pin centers in the open canvas left of the 430px drawer
+            const drawerWidth = window.innerWidth >= 640 ? 430 : 0;
+            const visibleCenterX = (viewport.clientWidth - drawerWidth) / 2;
+            const visibleCenterY = window.innerHeight >= 640
+                ? viewport.clientHeight / 2
+                : viewport.clientHeight * 0.34; // Keep pin above drawer on mobile
+
+            mapX = visibleCenterX - targetX * mapScale;
+            mapY = visibleCenterY - targetY * mapScale;
+
+            constrainMapBounds();
+            startCameraGlide(850);
+            SoundFX.playCameraGlide(true);
+            updateMapTransform();
+        }
+
+        function zoomMap(delta) {
+            const viewport = document.getElementById('map-viewport');
+            const centerX = viewport.clientWidth / 2;
+            const centerY = viewport.clientHeight / 2;
+            const newScale = Math.min(Math.max(mapScale + delta, getMinScale()), MAX_ZOOM);
+
+            mapX = centerX - (centerX - mapX) * (newScale / mapScale);
+            mapY = centerY - (centerY - mapY) * (newScale / mapScale);
+            mapScale = newScale;
+            constrainMapBounds();
+            startCameraGlide(320);
+            updateMapTransform();
+        }
+
+        function focusMapOnCoordinates(targetX, targetY) {
+            const viewport = document.getElementById('map-viewport');
+            if (!viewport) return;
+
+            // Smoothly zoom in close to inspect the point of interest
+            const targetScale = Math.min(Math.max(mapScale, PIN_FOCUS_ZOOM), MAX_ZOOM);
+            mapScale = targetScale;
+
+            // Offset horizontally on desktop (sm: 640px+) so the pin centers in the open canvas left of the 430px drawer
+            const drawerWidth = window.innerWidth >= 640 ? 430 : 0;
+            const visibleCenterX = (viewport.clientWidth - drawerWidth) / 2;
+            const visibleCenterY = window.innerHeight >= 640
+                ? viewport.clientHeight / 2
+                : viewport.clientHeight * 0.34; // Keep pin above drawer on mobile
+
+            mapX = visibleCenterX - targetX * mapScale;
+            mapY = visibleCenterY - targetY * mapScale;
+
+            constrainMapBounds();
+            startCameraGlide(850);
+            updateMapTransform();
+        }
+
+        function constrainMapBounds() {
+            const viewport = document.getElementById('map-viewport');
+            if (!viewport) return;
+            const vw = viewport.clientWidth;
+            const vh = viewport.clientHeight;
+            const scaledW = MAP_WIDTH * mapScale;
+            const scaledH = MAP_HEIGHT * mapScale;
+
+            if (scaledW <= vw) {
+                mapX = (vw - scaledW) / 2;
+            } else {
+                const margin = 120;
+                mapX = Math.min(margin, Math.max(vw - scaledW - margin, mapX));
+            }
+
+            if (scaledH <= vh) {
+                mapY = (vh - scaledH) / 2;
+            } else {
+                const margin = 100;
+                mapY = Math.min(margin, Math.max(vh - scaledH - margin, mapY));
+            }
+        }
+
+        function updateMapTransform() {
+            const world = document.getElementById('map-world');
+            world.style.transform = `translate3d(${mapX}px, ${mapY}px, 0) scale(${mapScale})`;
+            const hudZoom = document.getElementById('hud-zoom');
+            if (hudZoom) {
+                hudZoom.textContent = `${Math.round(mapScale * 100)}%`;
+            }
+        }
+
+        // ===================================================================
+        // 6. RENDER MAP PINS & LORE DRAWER
+        // ===================================================================
+        function handleMapQuickSearch() {
+            const input = document.getElementById('map-quick-search');
+            const resultsBox = document.getElementById('map-search-results');
+            const clearBtn = document.getElementById('map-search-clear');
+            const q = (input.value || '').trim().toLowerCase();
+
+            clearBtn.classList.toggle('hidden', q.length === 0);
+
+            if (!q) {
+                resultsBox.classList.add('hidden');
+                return;
+            }
+
+            const matchedPins = campaignData.pins.filter(p =>
+                p.name.toLowerCase().includes(q) ||
+                (p.faction && p.faction.toLowerCase().includes(q)) ||
+                (p.subtitle && p.subtitle.toLowerCase().includes(q))
+            );
+
+            const matchedChars = campaignData.characters.filter(c =>
+                c.name.toLowerCase().includes(q) ||
+                c.title.toLowerCase().includes(q)
+            );
+
+            if (matchedPins.length === 0 && matchedChars.length === 0) {
+                resultsBox.innerHTML = `<div class="px-3 py-2.5 text-xs text-gold/60 italic">No matching locations or characters</div>`;
+                resultsBox.classList.remove('hidden');
+                return;
+            }
+
+            const pinItems = matchedPins.map(p => `
+                <button onclick="openLoreDrawer('${p.id}'); clearMapQuickSearch();" class="w-full text-left px-3 py-2 hover:bg-obsidian border-b border-gold-dim/30 flex items-center justify-between transition">
+                    <div class="truncate">
+                        <div class="text-xs font-display font-bold text-gold-light truncate">${escapeHTML(p.name)}</div>
+                        <div class="text-[10px] text-gold/70 truncate">${escapeHTML(p.faction || 'Location')}</div>
+                    </div>
+                    <i class="fa-solid fa-location-dot text-arcane text-xs ml-2"></i>
+                </button>
+            `).join('');
+
+            const charItems = matchedChars.map(c => `
+                <button onclick="openCharacterDetailModal('${c.id}'); clearMapQuickSearch();" class="w-full text-left px-3 py-2 hover:bg-obsidian border-b border-gold-dim/30 flex items-center justify-between transition">
+                    <div class="truncate">
+                        <div class="text-xs font-display font-bold text-gold-light truncate">${escapeHTML(c.name)}</div>
+                        <div class="text-[10px] text-arcane truncate">${escapeHTML(c.title)}</div>
+                    </div>
+                    <i class="fa-solid fa-user text-gold text-xs ml-2"></i>
+                </button>
+            `).join('');
+
+            resultsBox.innerHTML = pinItems + charItems;
+            resultsBox.classList.remove('hidden');
+        }
+
+        function clearMapQuickSearch() {
+            document.getElementById('map-quick-search').value = '';
+            document.getElementById('map-search-results').classList.add('hidden');
+            document.getElementById('map-search-clear').classList.add('hidden');
+        }
+
+        // ===================================================================
+        // 6. RENDER MAP PINS & LORE DRAWER
+        // ===================================================================
+        function getPinVisualConfig(type) {
+            switch (type) {
+                case 'region':
+                    return {
+                        icon: 'fa-crown',
+                        ringColor: 'border-gold bg-obsidian text-gold',
+                        pulseColor: 'border-gold',
+                        label: 'Capital / Major Region'
+                    };
+                case 'danger':
+                    return {
+                        icon: 'fa-skull',
+                        ringColor: 'border-red-500 bg-red-950 text-red-400',
+                        pulseColor: 'border-red-500',
+                        label: 'Dungeon / Hazard'
+                    };
+                default:
+                    return {
+                        icon: 'fa-monument',
+                        ringColor: 'border-arcane bg-obsidian text-arcane',
+                        pulseColor: 'border-arcane',
+                        label: 'Landmark / Settlement'
+                    };
+            }
+        }
+
+        function filterPins(type) {
+            currentPinFilter = type;
+            document.querySelectorAll('.pin-filter-btn').forEach(btn => {
+                const isActive = btn.dataset.pinfilter === type;
+                btn.classList.toggle('bg-gold/20', isActive);
+                btn.classList.toggle('border-gold', isActive);
+                btn.classList.toggle('text-gold-light', isActive);
+                btn.classList.toggle('bg-obsidian/80', !isActive);
+                btn.classList.toggle('border-gold-dim/60', !isActive);
+            });
+            renderMapPins();
+        }
+
+        function renderMapPins() {
+            const layer = document.getElementById('map-pins-layer');
+            layer.innerHTML = '';
+
+            const visiblePins = campaignData.pins.filter(p => currentPinFilter === 'all' || p.type === currentPinFilter);
+            document.getElementById('pin-count-badge').textContent = `${visiblePins.length} Sites`;
+            updateEmptyMapGuide();
+
+            visiblePins.forEach(pin => {
+                const cfg = getPinVisualConfig(pin.type);
+                const isSelected = pin.id === selectedPinId;
+
+                const pinEl = document.createElement('button');
+                pinEl.className = `map-pin-btn group absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center focus:outline-none z-10 hover:z-30 transition-transform duration-300 ${isSelected ? 'scale-125 z-20' : 'hover:scale-110'}`;
+                pinEl.style.left = `${pin.x}px`;
+                pinEl.style.top = `${pin.y}px`;
+                pinEl.onmouseenter = () => SoundFX.playPinHover();
+                pinEl.onclick = (e) => {
+                    e.stopPropagation();
+                    openLoreDrawer(pin.id);
+                };
+
+                pinEl.innerHTML = `
+                    <div class="relative flex items-center justify-center">
+                        ${isSelected ? `<span class="active-pin-beacon absolute -inset-2 rounded-full border-2 border-arcane"></span>` : ''}
+                        <span class="pin-pulse absolute inset-0 rounded-full border-2 ${cfg.pulseColor}"></span>
+                        <div class="w-10 h-10 rounded-full border-2 ${isSelected ? 'border-arcane bg-obsidian text-arcane shadow-[0_0_24px_rgba(10,200,185,0.75)]' : `${cfg.ringColor} shadow-[0_0_18px_rgba(0,0,0,0.9)]`} flex items-center justify-center relative z-10 transition-colors">
+                            <i class="fa-solid ${cfg.icon} text-sm"></i>
+                        </div>
+                    </div>
+                    <div class="mt-1.5 px-2.5 py-0.5 rounded bg-hexdark/95 border ${isSelected ? 'border-arcane shadow-[0_0_12px_rgba(10,200,185,0.4)]' : 'border-gold-dim group-hover:border-gold shadow-lg'} whitespace-nowrap transition-colors">
+                        <span class="font-display text-xs font-bold tracking-wider uppercase ${isSelected ? 'text-arcane' : 'text-gold-light group-hover:text-white'}">
+                            ${escapeHTML(pin.name)}
+                        </span>
+                    </div>
+                `;
+                layer.appendChild(pinEl);
+            });
+        }
+
+        function openLoreDrawer(pinId) {
+            const pin = campaignData.pins.find(p => p.id === pinId);
+            if (!pin) return;
+
+            selectedPinId = pinId;
+            renderMapPins();
+            focusMapOnCoordinates(pin.x, pin.y);
+
+            const cfg = getPinVisualConfig(pin.type);
+            document.getElementById('drawer-bg-icon').className = `fa-solid ${cfg.icon} absolute -right-6 -top-6 text-[150px] text-gold/5 pointer-events-none`;
+            document.getElementById('drawer-type-badge').textContent = cfg.label;
+            document.getElementById('drawer-faction-badge').textContent = pin.faction || "Independent";
+            document.getElementById('drawer-title').textContent = pin.name;
+            document.getElementById('drawer-subtitle').textContent = pin.subtitle || "";
+            document.getElementById('drawer-description').textContent = pin.description;
+
+            const highlightsBox = document.getElementById('drawer-highlights-box');
+            if (pin.highlights && pin.highlights.trim()) {
+                highlightsBox.classList.remove('hidden');
+                document.getElementById('drawer-highlights').textContent = pin.highlights;
+            } else {
+                highlightsBox.classList.add('hidden');
+            }
+
+            // Linked Characters in this region
+            const linkedChars = campaignData.characters.filter(c => c.regionId === pin.id);
+            const charListEl = document.getElementById('drawer-characters-list');
+            if (linkedChars.length === 0) {
+                charListEl.innerHTML = `<p class="text-xs italic text-gold/60">No recorded champions or NPCs linked to this location yet.</p>`;
+            } else {
+                charListEl.innerHTML = linkedChars.map(c => `
+                    <button onclick="openCharacterDetailModal('${c.id}')" class="w-full text-left bg-obsidian/90 hover:bg-hexcard border border-gold-dim/60 hover:border-gold rounded-lg p-2.5 flex items-center justify-between transition group">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-9 h-9 rounded-full border border-gold/60 bg-hexdark flex items-center justify-center shrink-0 overflow-hidden">
+                                ${c.image
+                                    ? `<img src="${escapeHTML(c.image)}" alt="${escapeHTML(c.name)}" class="w-full h-full object-cover" onerror="this.style.display='none'">`
+                                    : `<i class="fa-solid fa-user-shield text-gold text-xs"></i>`}
+                            </div>
+                            <div class="truncate">
+                                <div class="font-display text-sm font-bold text-gold-light group-hover:text-gold truncate">${escapeHTML(c.name)}</div>
+                                <div class="text-[11px] text-gold/70 truncate">${escapeHTML(c.title)}</div>
+                            </div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-xs text-gold/60 group-hover:text-gold group-hover:translate-x-0.5 transition"></i>
+                    </button>
+                `).join('');
+            }
+
+            // Show edit button if in Edit Mode
+            document.getElementById('drawer-edit-btn').classList.toggle('hidden', !isEditMode);
+
+            // Slide Drawer Open
+            document.getElementById('lore-drawer').classList.remove('translate-x-full');
+        }
+
+        function closeLoreDrawer() {
+            const wasOpen = selectedPinId !== null;
+            selectedPinId = null;
+            document.getElementById('lore-drawer').classList.add('translate-x-full');
+            renderMapPins();
+            if (wasOpen && activeTab === 'map') {
+                resetMapView(true);
+            }
+        }
+
+        // ===================================================================
+        // 7. CHARACTERS ROSTER & BIO MODAL
+        // ===================================================================
+        function populateRegionDropdowns() {
+            const filterSelect = document.getElementById('char-region-filter');
+            const formSelect = document.getElementById('char-region-select');
+            const currentFilter = filterSelect.value;
+
+            const optionsHTML = campaignData.pins.map(p =>
+                `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`
+            ).join('');
+
+            filterSelect.innerHTML = `<option value="all">All Regions</option>${optionsHTML}`;
+            filterSelect.value = currentFilter || 'all';
+
+            formSelect.innerHTML = `<option value="">-- Wandering / No Fixed Region --</option>${optionsHTML}`;
+        }
+
+        function renderCharactersGrid() {
+            const grid = document.getElementById('characters-grid');
+            const search = (document.getElementById('char-search-input').value || '').toLowerCase();
+            const regionFilter = document.getElementById('char-region-filter').value;
+
+            const filtered = campaignData.characters.filter(c => {
+                const matchesRegion = regionFilter === 'all' || c.regionId === regionFilter;
+                const matchesSearch =
+                    c.name.toLowerCase().includes(search) ||
+                    c.title.toLowerCase().includes(search) ||
+                    (c.faction && c.faction.toLowerCase().includes(search)) ||
+                    (c.role && c.role.toLowerCase().includes(search));
+                return matchesRegion && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-14 px-4 bg-hexcard/50 border border-gold-dim/40 rounded-xl">
+                        <i class="fa-solid fa-users text-3xl text-gold/40 mb-3"></i>
+                        <p class="text-gold-light/80 text-sm font-medium mb-1">No characters recorded yet</p>
+                        <p class="text-gold/60 text-xs mb-4">Create heroes, villains, or NPCs and link them directly to locations on your map.</p>
+                        <button onclick="openCharacterFormModal()" class="px-4 py-2 rounded-lg bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110 transition">
+                            <i class="fa-solid fa-user-plus mr-1"></i> Create First Character
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(c => {
+                const region = campaignData.pins.find(p => p.id === c.regionId);
+                const regionName = region ? region.name : "Wandering";
+
+                return `
+                    <div onclick="openCharacterDetailModal('${c.id}')" class="group bg-hexcard border border-gold-dim/70 hover:border-gold rounded-xl overflow-hidden shadow-lg hover:shadow-[0_0_25px_rgba(200,170,110,0.2)] transition-all duration-300 cursor-pointer flex flex-col">
+                        <!-- Card Top Banner / Portrait -->
+                        <div class="relative h-44 bg-gradient-to-b from-obsidian to-hexcard border-b border-gold-dim/50 flex items-center justify-center overflow-hidden">
+                            ${c.image
+                                ? `<img src="${escapeHTML(c.image)}" alt="${escapeHTML(c.name)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" onerror="this.style.display='none'">`
+                                : `<div class="w-20 h-20 rounded-full border-2 border-gold/60 bg-obsidian flex items-center justify-center group-hover:scale-110 transition duration-300 shadow-[0_0_20px_rgba(200,170,110,0.2)]">
+                                     <i class="fa-solid fa-user-shield text-3xl text-gold"></i>
+                                   </div>`
+                            }
+                            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-obsidian/90 border border-gold-dim text-[10px] font-display uppercase tracking-wider text-gold">
+                                ${escapeHTML(regionName)}
+                            </div>
+                            ${c.role ? `
+                                <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-hexdark/90 border border-arcane/40 text-[10px] text-arcane">
+                                    ${escapeHTML(c.role)}
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Card Info -->
+                        <div class="p-4 flex-1 flex flex-col justify-between">
+                            <div>
+                                <h3 class="font-display text-lg font-bold text-gold-light group-hover:text-gold transition truncate">
+                                    ${escapeHTML(c.name)}
+                                </h3>
+                                <p class="text-xs italic text-gold/80 mb-2 truncate">${escapeHTML(c.title)}</p>
+                                <p class="text-xs text-gold-light/75 line-clamp-3 leading-relaxed">
+                                    ${escapeHTML(c.bio)}
+                                </p>
+                            </div>
+                            <div class="mt-4 pt-2.5 border-t border-gold-dim/30 flex items-center justify-between text-[11px] text-gold/70">
+                                <span class="truncate">${escapeHTML(c.faction || 'Unaffiliated')}</span>
+                                <span class="text-gold group-hover:translate-x-1 transition font-semibold">Inspect <i class="fa-solid fa-arrow-right ml-0.5"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openCharacterDetailModal(charId) {
+            const char = campaignData.characters.find(c => c.id === charId);
+            if (!char) return;
+            selectedCharacterId = charId;
+
+            const region = campaignData.pins.find(p => p.id === char.regionId);
+            document.getElementById('char-modal-name').textContent = char.name;
+            document.getElementById('char-modal-title').textContent = char.title;
+            document.getElementById('char-modal-role').textContent = char.role || "Notable Figure";
+            document.getElementById('char-modal-status').textContent = `• ${char.status || 'Alive'}`;
+            document.getElementById('char-modal-region').textContent = region ? region.name : "Wandering / Unknown";
+            document.getElementById('char-modal-faction').textContent = char.faction || "Independent";
+            document.getElementById('char-modal-bio').textContent = char.bio;
+            document.getElementById('char-modal-traits').textContent = char.traits || "No special notes recorded.";
+
+            const avatarEl = document.getElementById('char-modal-avatar');
+            if (char.image) {
+                avatarEl.innerHTML = `<img src="${escapeHTML(char.image)}" alt="${escapeHTML(char.name)}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<i class=\\'fa-solid fa-user-shield text-3xl text-gold\\'></i>'">`;
+            } else {
+                avatarEl.innerHTML = `<i class="fa-solid fa-user-shield text-3xl text-gold"></i>`;
+            }
+
+            const locateBtn = document.getElementById('char-modal-locate-btn');
+            if (region) {
+                locateBtn.classList.remove('hidden');
+                locateBtn.onclick = () => {
+                    closeModal('character-detail-modal');
+                    switchTab('map');
+                    openLoreDrawer(region.id);
+                };
+            } else {
+                locateBtn.classList.add('hidden');
+            }
+
+            document.getElementById('char-modal-delete-btn').classList.toggle('hidden', !isEditMode);
+            openModal('character-detail-modal');
+        }
+
+        // ===================================================================
+        // 8. WORLD LORE & CODEX
+        // ===================================================================
+        function filterCodex(category) {
+            currentCodexCategory = category;
+            document.querySelectorAll('.codex-cat-btn').forEach(btn => {
+                const isActive = btn.dataset.codexcat === category;
+                btn.classList.toggle('bg-gold/15', isActive);
+                btn.classList.toggle('text-gold-light', isActive);
+                btn.classList.toggle('border', isActive);
+                btn.classList.toggle('border-gold/50', isActive);
+                btn.classList.toggle('text-gold/80', !isActive);
+            });
+            renderCodexEntries();
+        }
+
+        function renderCodexEntries() {
+            const container = document.getElementById('codex-entries-list');
+            const filtered = campaignData.codex.filter(item =>
+                currentCodexCategory === 'all' || item.category === currentCodexCategory
+            );
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-hexcard border border-gold-dim/50 rounded-xl p-10 text-center">
+                        <i class="fa-solid fa-book-open text-3xl text-gold/40 mb-3"></i>
+                        <p class="text-gold-light/80 text-sm font-medium mb-1">The Great Archive is empty</p>
+                        <p class="text-gold/60 text-xs mb-4">Add entries for your world's history, factions, magic rules, or bestiary.</p>
+                        <button onclick="openCodexFormModal()" class="px-4 py-2 rounded-lg bg-gold text-obsidian font-display font-bold text-xs uppercase tracking-wider hover:brightness-110 transition">
+                            <i class="fa-solid fa-plus mr-1"></i> Write First Lore Entry
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filtered.map(entry => `
+                <article class="bg-hexcard border border-gold-dim/70 rounded-xl p-6 shadow-lg">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-display uppercase tracking-widest px-2.5 py-0.5 rounded bg-gold/15 border border-gold/40 text-gold">
+                                ${escapeHTML(entry.category)}
+                            </span>
+                            ${entry.tag ? `<span class="text-xs text-arcane font-medium">• ${escapeHTML(entry.tag)}</span>` : ''}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="openCodexFormModal('${entry.id}')" class="px-2.5 py-1 rounded bg-obsidian border border-gold-dim hover:border-gold text-gold text-xs transition">
+                                <i class="fa-solid fa-pen mr-1"></i> Edit
+                            </button>
+                            ${isEditMode ? `
+                                <button onclick="deleteCodexEntry('${entry.id}')" class="px-2.5 py-1 rounded bg-obsidian border border-red-900 hover:border-red-500 text-red-400 text-xs transition">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <h3 class="font-display text-xl sm:text-2xl font-bold text-gold-light mb-3">
+                        ${escapeHTML(entry.title)}
+                    </h3>
+                    <div class="text-sm text-gold-light/90 leading-relaxed whitespace-pre-line border-t border-gold-dim/30 pt-3">
+                        ${escapeHTML(entry.content)}
+                    </div>
+                </article>
+            `).join('');
+        }
+
+        // ===================================================================
+        // 9. CRUD FORMS (PINS, CHARACTERS, CODEX, SETTINGS)
+        // ===================================================================
+        // --- Pin CRUD ---
+        function openPinFormModal(pinId = null, defaultX = 800, defaultY = 500) {
+            const form = document.getElementById('pin-form');
+            form.reset();
+
+            if (pinId) {
+                const pin = campaignData.pins.find(p => p.id === pinId);
+                if (!pin) return;
+                document.getElementById('pin-form-heading').textContent = "Edit Map Location";
+                document.getElementById('pin-id').value = pin.id;
+                document.getElementById('pin-name').value = pin.name;
+                document.getElementById('pin-type').value = pin.type;
+                document.getElementById('pin-subtitle').value = pin.subtitle || "";
+                document.getElementById('pin-faction').value = pin.faction || "";
+                document.getElementById('pin-x').value = pin.x;
+                document.getElementById('pin-y').value = pin.y;
+                document.getElementById('pin-description').value = pin.description;
+                document.getElementById('pin-highlights').value = pin.highlights || "";
+                document.getElementById('pin-delete-btn').classList.remove('hidden');
+            } else {
+                document.getElementById('pin-form-heading').textContent = "Place New Map Location";
+                document.getElementById('pin-id').value = "";
+                document.getElementById('pin-x').value = defaultX;
+                document.getElementById('pin-y').value = defaultY;
+                document.getElementById('pin-delete-btn').classList.add('hidden');
+            }
+
+            openModal('pin-form-modal');
+        }
+
+        function editCurrentPin() {
+            if (selectedPinId) {
+                openPinFormModal(selectedPinId);
+            }
+        }
+
+        function savePinForm(e) {
+            e.preventDefault();
+            const id = document.getElementById('pin-id').value;
+            const pinObj = {
+                id: id || `pin-${Date.now()}`,
+                name: document.getElementById('pin-name').value.trim(),
+                type: document.getElementById('pin-type').value,
+                subtitle: document.getElementById('pin-subtitle').value.trim(),
+                faction: document.getElementById('pin-faction').value.trim(),
+                x: Number(document.getElementById('pin-x').value),
+                y: Number(document.getElementById('pin-y').value),
+                description: document.getElementById('pin-description').value.trim(),
+                highlights: document.getElementById('pin-highlights').value.trim()
+            };
+
+            if (id) {
+                const idx = campaignData.pins.findIndex(p => p.id === id);
+                if (idx !== -1) campaignData.pins[idx] = pinObj;
+            } else {
+                campaignData.pins.push(pinObj);
+            }
+
+            saveCampaignData();
+            populateRegionDropdowns();
+            renderMapPins();
+            renderCharactersGrid();
+            closeModal('pin-form-modal');
+            openLoreDrawer(pinObj.id);
+            SoundFX.playSave();
+            showToast(`Saved location: ${pinObj.name}`);
+        }
+
+        function deletePinFromForm() {
+            const id = document.getElementById('pin-id').value;
+            if (!id) return;
+            campaignData.pins = campaignData.pins.filter(p => p.id !== id);
+            saveCampaignData();
+            populateRegionDropdowns();
+            renderMapPins();
+            closeModal('pin-form-modal');
+            closeLoreDrawer();
+            showToast("Location deleted from map.");
+        }
+
+        // --- Character CRUD ---
+        function openCharacterFormModal(charId = null) {
+            populateRegionDropdowns();
+            const form = document.getElementById('char-form');
+            form.reset();
+
+            if (charId) {
+                const char = campaignData.characters.find(c => c.id === charId);
+                if (!char) return;
+                document.getElementById('char-form-heading').textContent = "Edit Character";
+                document.getElementById('char-id').value = char.id;
+                document.getElementById('char-name').value = char.name;
+                document.getElementById('char-title').value = char.title;
+                document.getElementById('char-region-select').value = char.regionId || "";
+                document.getElementById('char-role').value = char.role || "";
+                document.getElementById('char-faction').value = char.faction || "";
+                document.getElementById('char-status').value = char.status || "Alive";
+                document.getElementById('char-image').value = char.image || "";
+                document.getElementById('char-bio').value = char.bio;
+                document.getElementById('char-traits').value = char.traits || "";
+            } else {
+                document.getElementById('char-form-heading').textContent = "Create New Character";
+                document.getElementById('char-id').value = "";
+            }
+
+            openModal('char-form-modal');
+        }
+
+        function editCurrentCharacter() {
+            if (selectedCharacterId) {
+                closeModal('character-detail-modal');
+                openCharacterFormModal(selectedCharacterId);
+            }
+        }
+
+        function saveCharacterForm(e) {
+            e.preventDefault();
+            const id = document.getElementById('char-id').value;
+            const charObj = {
+                id: id || `char-${Date.now()}`,
+                name: document.getElementById('char-name').value.trim(),
+                title: document.getElementById('char-title').value.trim(),
+                regionId: document.getElementById('char-region-select').value,
+                role: document.getElementById('char-role').value.trim(),
+                faction: document.getElementById('char-faction').value.trim(),
+                status: document.getElementById('char-status').value.trim(),
+                image: document.getElementById('char-image').value.trim(),
+                bio: document.getElementById('char-bio').value.trim(),
+                traits: document.getElementById('char-traits').value.trim()
+            };
+
+            if (id) {
+                const idx = campaignData.characters.findIndex(c => c.id === id);
+                if (idx !== -1) campaignData.characters[idx] = charObj;
+            } else {
+                campaignData.characters.push(charObj);
+            }
+
+            saveCampaignData();
+            renderCharactersGrid();
+            if (selectedPinId) openLoreDrawer(selectedPinId);
+            closeModal('char-form-modal');
+            SoundFX.playSave();
+            showToast(`Saved character: ${charObj.name}`);
+        }
+
+        function deleteCurrentCharacter() {
+            if (!selectedCharacterId) return;
+            campaignData.characters = campaignData.characters.filter(c => c.id !== selectedCharacterId);
+            saveCampaignData();
+            renderCharactersGrid();
+            closeModal('character-detail-modal');
+            showToast("Character removed.");
+        }
+
+        // --- Codex CRUD ---
+        function openCodexFormModal(entryId = null) {
+            const form = document.getElementById('codex-form');
+            form.reset();
+
+            if (entryId) {
+                const entry = campaignData.codex.find(e => e.id === entryId);
+                if (!entry) return;
+                document.getElementById('codex-form-heading').textContent = "Edit Codex Entry";
+                document.getElementById('codex-id').value = entry.id;
+                document.getElementById('codex-title').value = entry.title;
+                document.getElementById('codex-category').value = entry.category;
+                document.getElementById('codex-tag').value = entry.tag || "";
+                document.getElementById('codex-content').value = entry.content;
+            } else {
+                document.getElementById('codex-form-heading').textContent = "Add Codex Lore Entry";
+                document.getElementById('codex-id').value = "";
+            }
+            openModal('codex-form-modal');
+        }
+
+        function saveCodexForm(e) {
+            e.preventDefault();
+            const id = document.getElementById('codex-id').value;
+            const entryObj = {
+                id: id || `codex-${Date.now()}`,
+                title: document.getElementById('codex-title').value.trim(),
+                category: document.getElementById('codex-category').value,
+                tag: document.getElementById('codex-tag').value.trim(),
+                content: document.getElementById('codex-content').value.trim()
+            };
+
+            if (id) {
+                const idx = campaignData.codex.findIndex(item => item.id === id);
+                if (idx !== -1) campaignData.codex[idx] = entryObj;
+            } else {
+                campaignData.codex.unshift(entryObj);
+            }
+
+            saveCampaignData();
+            renderCodexEntries();
+            closeModal('codex-form-modal');
+            SoundFX.playSave();
+            showToast(`Saved lore: ${entryObj.title}`);
+        }
+
+        function deleteCodexEntry(id) {
+            campaignData.codex = campaignData.codex.filter(item => item.id !== id);
+            saveCampaignData();
+            renderCodexEntries();
+            showToast("Lore entry deleted.");
+        }
+
+        // ===================================================================
+        // 10. CUSTOM MAP UPLOAD, SETTINGS, EXPORT & IMPORT
+        // ===================================================================
+        function openWorldSettingsModal() {
+            document.getElementById('settings-world-name').value = campaignData.meta.title;
+            document.getElementById('settings-world-subtitle').value = campaignData.meta.subtitle;
+            openModal('world-settings-modal');
+        }
+
+        function saveWorldSettings() {
+            campaignData.meta.title = document.getElementById('settings-world-name').value.trim() || "New World Atlas";
+            campaignData.meta.subtitle = document.getElementById('settings-world-subtitle').value.trim();
+            saveCampaignData();
+            applyWorldMeta();
+            closeModal('world-settings-modal');
+            SoundFX.playSave();
+            showToast("Campaign settings updated!");
+        }
+
+        function handleCustomMapUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                campaignData.meta.customMapDataUrl = e.target.result;
+                saveCampaignData();
+                applyWorldMeta();
+                resetMapView();
+                showToast("Custom world map uploaded!");
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearCustomMap() {
+            campaignData.meta.customMapDataUrl = "";
+            saveCampaignData();
+            applyWorldMeta();
+            resetMapView();
+            showToast("Restored default fantasy map.");
+        }
+
+        function exportWorldJSON() {
+            const dataStr = JSON.stringify(campaignData, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeName = (campaignData.meta.title || 'campaign').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            a.href = url;
+            a.download = `${safeName}_atlas.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("Campaign exported as JSON!");
+        }
+
+        function importWorldJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (parsed && parsed.pins && parsed.characters && parsed.codex) {
+                        campaignData = parsed;
+                        saveCampaignData();
+                        applyWorldMeta();
+                        renderMapPins();
+                        populateRegionDropdowns();
+                        renderCharactersGrid();
+                        renderCodexEntries();
+                        closeLoreDrawer();
+                        resetMapView();
+                        showToast("Campaign imported successfully!");
+                    } else {
+                        showToast("Invalid campaign JSON format.");
+                    }
+                } catch (err) {
+                    showToast("Error reading JSON file.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function confirmResetDemo() {
+            campaignData = JSON.parse(JSON.stringify(DEFAULT_CAMPAIGN_DATA));
+            saveCampaignData();
+            applyWorldMeta();
+            renderMapPins();
+            populateRegionDropdowns();
+            renderCharactersGrid();
+            renderCodexEntries();
+            closeLoreDrawer();
+            resetMapView();
+            SoundFX.playClick('C3');
+            showToast("Cleared all data — Reset to blank slate.");
+        }
+
+        // ===================================================================
+        // 11. UI HELPERS
+        // ===================================================================
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function toggleDataMenu() {
+            document.getElementById('data-dropdown').classList.toggle('hidden');
+        }
+
+        // Close dropdown when clicking outside
+        window.addEventListener('click', (e) => {
+            if (!e.target.closest('#data-dropdown') && !e.target.closest('button[onclick="toggleDataMenu()"]')) {
+                document.getElementById('data-dropdown').classList.add('hidden');
+            }
+        });
+
+        let toastTimer = null;
+        function showToast(msg) {
+            const toast = document.getElementById('toast-notification');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 3000);
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
